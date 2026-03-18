@@ -5,7 +5,11 @@ class OcrModel:
     @cached_property
     def azur_lane(self):
         from module.ocr.al_ocr import AlOcr
-        return AlOcr()
+        return AlOcr(
+            rec_model_name='scene-densenet_lite_136-gru',
+            rec_model_fp='bin/cnocr_models/cnocr-v2.3-scene-densenet_lite_136-gru-epoch=004-ft-model.onnx',
+            name='azur_lane'
+        )
 
     @cached_property
     def azur_lane_jp(self):

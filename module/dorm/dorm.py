@@ -65,6 +65,15 @@ class OcrDormFood(DigitCounter):
 OCR_FILL = OcrDormFood(OCR_DORM_FILL, name='OCR_DORM_FILL')
 
 
+class OcrDormFoodAmount(Digit):
+    def pre_process(self, image):
+        # Empty food quantities appear as gray text (max RGB ~150),
+        # whereas actual quantities are pure white (max RGB 255).
+        if np.max(image) < 200:
+            return np.zeros(image.shape[:2], dtype=np.uint8)
+        return super().pre_process(image)
+
+
 class Food:
     def __init__(self, feed, amount):
         self.feed = feed
@@ -301,7 +310,7 @@ class RewardDorm(UI):
     @cached_property
     def _dorm_food_ocr(self):
         grids = self._dorm_food.crop((54, 41, 101, 66), name='FOOD_AMOUNT')
-        return Digit(grids.buttons, letter=(255, 255, 255), threshold=128, name='OCR_DORM_FOOD')
+        return OcrDormFoodAmount(grids.buttons, letter=(255, 255, 255), threshold=128, name='OCR_DORM_FOOD')
 
     def _dorm_has_food(self, button):
         return np.min(rgb2gray(self.image_crop(button, copy=False))) < 127
