@@ -31,6 +31,6 @@ matplotlib
 pycryptodome
 typing_extensions>=4.8.0
 pydantic>=2.5.0
-cnocr
+cnocr   # 预计删除
 watchdog>=2.0.0
 numba
