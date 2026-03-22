@@ -35,3 +35,4 @@ rapidocr
 onnxruntime-directml # 在Mac Linux安装时请用onnxruntime或onnxruntime-gpu
 watchdog>=2.0.0
 numba
+pip==26.0.1
