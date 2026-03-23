@@ -6,51 +6,15 @@ from PIL import Image
 from module.exception import RequestHumanTakeover
 from module.logger import logger
 
-try:
-    logger.info('正在加载 OCR 模型...')
-    from rapidocr import RapidOCR, OCRVersion
-except Exception as e:
-    logger.critical(f'Failed to load OCR dependencies: {e}')
-    logger.critical(f'无法加载 OCR 依赖，如错误信息包含 DLL load failed while 请安装微软 C++ 运行库 https://aka.ms/vs/17/release/vc_redist.x64.exe')
-    # Define dummy classes to prevent ImportErrors in other modules
-    class RapidOCR:
-        pass
-    class OCRVersion:
-        pass
-
-
 class AlOcr:
     # 设为 True 可将每张送入 OCR 的图片保存到 debug_ocr/ 目录以便调试
     DEBUG = False
 
     def __init__(self, **kwargs):
         self.model = None
-        
-        # Determine model path
-        name = kwargs.get('name', 'en')
-        if name == 'zhcn' or name == 'cn':
-            self.params = {
-                "Global.use_det": False,
-                "Global.use_cls": False,
-                "Det.model_path": None,
-                "Cls.model_path": None,
-                "Rec.ocr_version": OCRVersion.PPOCRV5,
-                "Rec.model_path": "bin/ocr_models/zh-CN/alocr-zh-cn-v2.5.dtk.onnx",
-                "Rec.rec_keys_path": "bin/ocr_models/zh-CN/cn.txt",
-                "EngineConfig.onnxruntime.use_dml": True
-            }
-        else:
-            self.params = {
-                "Global.use_det": False,
-                "Global.use_cls": False,
-                "Det.model_path": None,
-                "Cls.model_path": None,
-                "Rec.ocr_version": OCRVersion.PPOCRV4,
-                "Rec.model_path": "bin/ocr_models/en-US/alocr-en-us-v2.0.nvc.onnx",
-                "Rec.rec_keys_path": "bin/ocr_models/en-US/en.txt",
-                "EngineConfig.onnxruntime.use_dml": True
-            }
-
+        self.name = kwargs.get('name', 'en')
+        self.params = {}
+        self.is_pdparams = False
         self._model_loaded = False
         
     def _read_gpu_acceleration_setting(self) -> bool:
@@ -76,6 +40,37 @@ class AlOcr:
         return True
 
     def init(self):
+        try:
+            logger.info('正在加载 OCR 模型...')
+            from rapidocr import RapidOCR, OCRVersion
+        except Exception as e:
+            logger.critical(f'Failed to load OCR dependencies: {e}')
+            logger.critical(f'无法加载 OCR 依赖，如错误信息包含 DLL load failed while 请安装微软 C++ 运行库 https://aka.ms/vs/17/release/vc_redist.x64.exe')
+            return
+
+        if self.name == 'zhcn' or self.name == 'cn':
+            self.params = {
+                "Global.use_det": False,
+                "Global.use_cls": False,
+                "Det.model_path": None,
+                "Cls.model_path": None,
+                "Rec.ocr_version": OCRVersion.PPOCRV5,
+                "Rec.model_path": "bin/ocr_models/zh-CN/alocr-zh-cn-v2.5.dtk.onnx",
+                "Rec.rec_keys_path": "bin/ocr_models/zh-CN/cn.txt",
+                "EngineConfig.onnxruntime.use_dml": True
+            }
+        else:
+            self.params = {
+                "Global.use_det": False,
+                "Global.use_cls": False,
+                "Det.model_path": None,
+                "Cls.model_path": None,
+                "Rec.ocr_version": OCRVersion.PPOCRV4,
+                "Rec.model_path": "bin/ocr_models/en-US/alocr-en-us-v2.0.nvc.onnx",
+                "Rec.rec_keys_path": "bin/ocr_models/en-US/en.txt",
+                "EngineConfig.onnxruntime.use_dml": True
+            }
+
         use_gpu = self._read_gpu_acceleration_setting()
         if use_gpu:
             self.params['EngineConfig.onnxruntime.use_dml'] = True
@@ -96,6 +91,17 @@ class AlOcr:
             self.model = RapidOCR(params=self.params)
             
         self._model_loaded = True
+
+    def unload(self):
+        """卸载并清理加载的 OCR 模型以释放内存"""
+        if self._model_loaded:
+            logger.info(f"Unloading OCR model '{self.name}' from memory...")
+            self.model = None
+            if hasattr(self, 'post_process_class'):
+                del self.post_process_class
+            self._model_loaded = False
+            import gc
+            gc.collect()
 
     def _init_pdparams_model(self, pdparams_path):
         import yaml
