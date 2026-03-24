@@ -1,5 +1,4 @@
 import os
-import gc
 import numpy as np
 import cv2
 from PIL import Image
@@ -26,16 +25,7 @@ if config_name:
     else:
         USE_GPU = True
 
-# GC 调优：降低垃圾回收阈值，更积极地回收短生命周期对象
-_gc_threshold = gc.get_threshold()
-gc.set_threshold(500, 5, 5)
-logger.info(f'GC threshold adjusted: {_gc_threshold} -> {gc.get_threshold()}')
-
-# OCR 推理批量 GC 间隔（每处理多少张图触发一次 GC）
-_GC_INTERVAL = 50
-
 class CnModel:
-    """中文 OCR 模型，懒加载以避免未使用时占用内存"""
     def __init__(self):
         self.params = {
             "Global.use_det": False,
@@ -47,25 +37,9 @@ class CnModel:
             "Rec.rec_keys_path": "bin/ocr_models/zh-CN/cn.txt",
             "EngineConfig.onnxruntime.use_dml": USE_GPU
         }
-        self._model = None
-
-    @property
-    def model(self):
-        if self._model is None:
-            logger.info('Lazy loading CnModel...')
-            self._model = RapidOCR(params=self.params)
-        return self._model
-
-    def release(self):
-        """释放模型占用的内存"""
-        if self._model is not None:
-            del self._model
-            self._model = None
-            gc.collect()
-            logger.info('CnModel released')
+        self.model = RapidOCR(params=self.params)
 
 class EnModel:
-    """英文 OCR 模型，懒加载以避免未使用时占用内存"""
     def __init__(self):
         self.params = {
             "Global.use_det": False,
@@ -77,22 +51,7 @@ class EnModel:
             "Rec.rec_keys_path": "bin/ocr_models/en-US/en.txt",
             "EngineConfig.onnxruntime.use_dml": USE_GPU
         }
-        self._model = None
-
-    @property
-    def model(self):
-        if self._model is None:
-            logger.info('Lazy loading EnModel...')
-            self._model = RapidOCR(params=self.params)
-        return self._model
-
-    def release(self):
-        """释放模型占用的内存"""
-        if self._model is not None:
-            del self._model
-            self._model = None
-            gc.collect()
-            logger.info('EnModel released')
+        self.model = RapidOCR(params=self.params)
 
 cn_model = CnModel()
 en_model = EnModel()
@@ -119,21 +78,15 @@ class AlOcr:
     def ocr(self, img_fp):
         logger.info(f"[VERBOSE] AlOcr.ocr: Ensure loaded...")
         self._ensure_loaded()
-
-        res = None
+            
         try:
             res = self.model(img_fp)
             if hasattr(res, 'txts') and res.txts:
-                text = res.txts[0]
-            else:
-                text = ""
-            return text
+                return res.txts[0]
+            return ""
         except Exception as e:
             logger.error(f"AlOcr.ocr exception: {e}")
             raise
-        finally:
-            del res
-            gc.collect(0)
 
     def ocr_for_single_line(self, img_fp):
         return self.ocr(img_fp)
@@ -142,7 +95,6 @@ class AlOcr:
         self._ensure_loaded()
         results = []
         for i, img in enumerate(img_list):
-            res = None
             try:
                 res = self.model(img)
                 if hasattr(res, 'txts') and res.txts:
@@ -152,11 +104,6 @@ class AlOcr:
             except Exception as e:
                 logger.error(f"AlOcr.ocr_for_single_lines exception on image {i}: {e}")
                 raise
-            finally:
-                del res
-                if (i + 1) % _GC_INTERVAL == 0:
-                    gc.collect(0)
-        gc.collect()
         return results
 
     def set_cand_alphabet(self, cand_alphabet):
@@ -179,10 +126,3 @@ class AlOcr:
         if cand_alphabet:
             results = [''.join([c for c in res if c in cand_alphabet]) for res in results]
         return results
-
-    def cleanup(self):
-        """手动释放模型引用，用于需要回收内存时调用"""
-        self.model = None
-        self._model_loaded = False
-        gc.collect()
-        logger.info(f"AlOcr instance '{self.name}' cleaned up, GC collected")
